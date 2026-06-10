@@ -1,0 +1,130 @@
+# ============================================================
+# Add AD Users to Local Administrators Group
+# Compatible: Windows Server 2012 ~ Windows 11
+# Run as: Local Administrator
+# 해당 서버가 도메인에 미리 조인되어있다는 상황에서 가능합니다.
+# ============================================================
+
+$DomainFqdn = "AD 도메인 주소"
+
+$DomainUsers = @(
+    "계정명1",
+    "계정명2",
+    "계정명3"
+)
+
+Write-Host "============================================================"
+Write-Host " AD Users -> Local Administrators Registration"
+Write-Host " Domain : $DomainFqdn"
+Write-Host "============================================================"
+Write-Host ""
+
+# 1. 관리자 권한 실행 여부 확인
+$CurrentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$Principal = New-Object Security.Principal.WindowsPrincipal($CurrentIdentity)
+
+if (-not $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "[FAIL] PowerShell을 관리자 권한으로 실행해야 합니다." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "[OK] 관리자 권한 실행 확인" -ForegroundColor Green
+
+# 2. 도메인 조인 여부 확인
+try {
+    $ComputerSystem = Get-WmiObject Win32_ComputerSystem
+}
+catch {
+    Write-Host "[FAIL] 시스템 정보를 조회하지 못했습니다." -ForegroundColor Red
+    Write-Host $_.Exception.Message
+    exit 1
+}
+
+if (-not $ComputerSystem.PartOfDomain) {
+    Write-Host "[FAIL] 이 서버는 도메인 조인 상태가 아닙니다." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "[OK] 도메인 조인 확인 : $($ComputerSystem.Domain)" -ForegroundColor Green
+
+if ($ComputerSystem.Domain.ToLower() -ne $DomainFqdn.ToLower()) {
+    Write-Host "[WARN] 서버 조인 도메인과 입력 도메인이 다릅니다." -ForegroundColor Yellow
+    Write-Host "       Server Domain : $($ComputerSystem.Domain)"
+    Write-Host "       Input  Domain : $DomainFqdn"
+    Write-Host "       계속 진행합니다."
+}
+
+# 3. 로컬 Administrators 그룹명 확인
+# S-1-5-32-544 = Built-in Administrators Group
+try {
+    $LocalAdminGroupInfo = Get-WmiObject Win32_Group -Filter "LocalAccount=True AND SID='S-1-5-32-544'"
+}
+catch {
+    Write-Host "[FAIL] 로컬 관리자 그룹 정보를 조회하지 못했습니다." -ForegroundColor Red
+    Write-Host $_.Exception.Message
+    exit 1
+}
+
+if ($null -eq $LocalAdminGroupInfo) {
+    Write-Host "[FAIL] 로컬 Administrators 그룹을 찾지 못했습니다." -ForegroundColor Red
+    exit 1
+}
+
+$LocalAdminGroupName = $LocalAdminGroupInfo.Name
+Write-Host "[OK] 로컬 관리자 그룹 확인 : $LocalAdminGroupName" -ForegroundColor Green
+Write-Host ""
+
+# 4. 로컬 Administrators 그룹 ADSI 바인딩
+try {
+    $LocalAdminGroup = [ADSI]"WinNT://./$LocalAdminGroupName,group"
+}
+catch {
+    Write-Host "[FAIL] 로컬 관리자 그룹에 바인딩하지 못했습니다." -ForegroundColor Red
+    Write-Host $_.Exception.Message
+    exit 1
+}
+
+# 5. AD 계정을 로컬 관리자 그룹에 추가
+foreach ($User in $DomainUsers) {
+    Write-Host "------------------------------------------------------------"
+    Write-Host "[INFO] 처리 대상 : $DomainFqdn\$User"
+
+    $AdsiPath = "WinNT://$DomainFqdn/$User,user"
+
+    try {
+        # 계정 존재 여부 확인
+        $AdUser = [ADSI]$AdsiPath
+        $null = $AdUser.Name
+
+        # 로컬 관리자 그룹에 추가
+        $LocalAdminGroup.Add($AdsiPath)
+
+        Write-Host "[OK] 추가 완료 : $DomainFqdn\$User -> Local $LocalAdminGroupName" -ForegroundColor Green
+    }
+    catch {
+        $ErrorMessage = $_.Exception.Message
+
+        if (
+            $ErrorMessage -match "already" -or
+            $ErrorMessage -match "이미" -or
+            $ErrorMessage -match "exist" -or
+            $ErrorMessage -match "존재"
+        ) {
+            Write-Host "[OK] 이미 등록되어 있음 : $DomainFqdn\$User" -ForegroundColor Green
+        }
+        else {
+            Write-Host "[FAIL] 추가 실패 : $DomainFqdn\$User" -ForegroundColor Red
+            Write-Host "       $ErrorMessage" -ForegroundColor Red
+        }
+    }
+}
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host " 현재 로컬 관리자 그룹 멤버"
+Write-Host "============================================================"
+
+net localgroup "$LocalAdminGroupName"
+
+Write-Host ""
+Write-Host "[DONE] 작업 완료"
