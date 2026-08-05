@@ -1,0 +1,83 @@
+#######################################################################################
+# 재부팅과 관련된 모든 이벤트 1차 추출
+$Start = Get-Date "2026-08-05 05:45:00"
+$End   = Get-Date "2026-08-05 06:20:00"
+
+Get-WinEvent -FilterHashtable @{
+    LogName   = "System"
+    StartTime = $Start
+    EndTime   = $End
+} | Where-Object {
+    $_.Id -in 12,13,19,41,1001,1074,6005,6006,6008,6009,7045
+} | Sort-Object TimeCreated |
+Format-Table TimeCreated, Id, ProviderName, LevelDisplayName, Message -Wrap
+
+#######################################################################################
+# 실제 시스템 BugCheck 이벤트 확인
+
+Get-WinEvent -FilterHashtable @{
+    LogName   = "System"
+    StartTime = $Start
+    EndTime   = Get-Date "2026-08-05 06:20:00"
+} | Where-Object {
+    $_.ProviderName -match "BugCheck|WER-SystemErrorReporting" -or
+    $_.Id -in 41,1001,6008
+} | Sort-Object TimeCreated |
+Format-List TimeCreated,ProviderName,Id,LevelDisplayName,Message
+
+#######################################################################################
+# Event 41의 실제 BugCheckCode 확인
+
+$e = Get-WinEvent -FilterHashtable @{
+    LogName   = 'System'
+    Id        = 41
+    StartTime = Get-Date '2026-08-05 06:10:00'
+    EndTime   = Get-Date '2026-08-05 06:20:00'
+} | Select-Object -First 1
+
+[xml]$xml = $e.ToXml()
+
+$xml.Event.EventData.Data |
+Select-Object Name, '#text'
+
+#######################################################################################
+# 실제 충돌 이벤트 확인
+
+$Start = Get-Date "2026-08-05 06:00:00"
+$End   = Get-Date "2026-08-05 06:07:00"
+
+Get-WinEvent -FilterHashtable @{
+    LogName   = "Application"
+    Id        = 1000
+    StartTime = $Start
+    EndTime   = $End
+} -ErrorAction SilentlyContinue |
+Sort-Object TimeCreated |
+Format-List TimeCreated,ProviderName,Id,LevelDisplayName,Message
+
+  
+#######################################################################################
+# 최근 날짜 덤프 확인
+
+Get-ChildItem `
+    'C:\Windows\Minidump\*.dmp',
+    'C:\Windows\MEMORY.DMP' `
+    -ErrorAction SilentlyContinue |
+Sort-Object LastWriteTime -Descending |
+Select-Object FullName,Length,CreationTime,LastWriteTime
+
+########################################################################################
+# 지정된 시간에 예약/정상 재기동 여부 확인
+  
+$Start = Get-Date '2026-08-05 05:50:00'
+$End   = Get-Date '2026-08-05 06:20:00'
+
+Get-WinEvent -FilterHashtable @{
+    LogName   = 'System'
+    StartTime = $Start
+    EndTime   = $End
+} | Where-Object {
+    $_.Id -in 13,19,20,1074,1076,6006,6008,41
+} | Sort-Object TimeCreated |
+Format-List TimeCreated,ProviderName,Id,LevelDisplayName,Message
+
