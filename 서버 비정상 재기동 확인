@@ -1,0 +1,50 @@
+1. 재기동 시각 확인
+내용
+- (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+- systeminfo | findstr /i "System Boot Time"
+사유
+- 실제 OS 부팅 시각 확인
+- 장애 분석 시간 범위 설정
+
+2. 정상 및 비정상 종료 이벤트 확인
+내용
+- Get-WinEvent -FilterHashtable @{LogName='System'; Id=41,1074,6008} | Select TimeCreated,Id,ProviderName,Message
+사유
+- 1074: 정상 Restart/Shutdown 요청
+- 41, 6008: 비정상 종료 정황
+
+3. BugCheck 및 BSOD 확인
+내용
+- Get-WinEvent -FilterHashtable @{LogName='System'; Id=1001} | Select TimeCreated,Message
+사유
+- BugCheck Code 확인
+- BSOD, Kernel Crash 확인
+
+4. Kernel-Power Event 41 상세 확인
+내용
+- Get-WinEvent -FilterHashtable @{LogName='System';Id=41} | Select -First 1 | Format-List *
+사유
+- BugcheckCode, PowerButtonTimestamp 확인
+- Crash, 전원 단절, 강제 Reset 구분
+
+5. Dump 파일 확인
+내용
+- Get-Item C:\Windows\MEMORY.DMP -ErrorAction SilentlyContinue
+- Get-ChildItem C:\Windows\Minidump -ErrorAction SilentlyContinue
+사유
+- Kernel Dump 존재 여부
+- WinDbg 기반 Crash 원인 분석
+
+6. 장애 직전 System Event 확인
+내용
+- Get-WinEvent -FilterHashtable @{LogName='System'; StartTime=(Get-Date '2026-09-08 09:20'); EndTime=(Get-Date '2026-09-08 09:40')} | Sort TimeCreated
+사유
+- Disk, NTFS, Driver, Service 오류 확인
+- 장애 직전 이벤트 흐름 확인
+
+7. 하드웨어 오류 확인
+내용
+- Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-WHEA-Logger'}
+사유
+- CPU, Memory, PCIe 하드웨어 오류
+- 물리 Host, Hypervisor 이상 판단 근거
