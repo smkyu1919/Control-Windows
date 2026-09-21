@@ -1,0 +1,2 @@
+# 부팅 시, Bios 접근 버튼 눌러도 반응없을 경우, 부팅 후 PowerShell로 수행
+reagentc /boottore shutdown /r /t 0
